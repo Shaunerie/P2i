@@ -91,10 +91,7 @@ if __name__ == "__main__":
     largeur_silo = 1 #m
 
     # 1. Définition de l'état initial pour chaque particule composant l'échantillon
-
-
-
-
+        ???
     # 5. Tant que temps < duree_simulation, boucle principale
     while temps < duree_simulation:
         # 6. Avancée dans le temps
