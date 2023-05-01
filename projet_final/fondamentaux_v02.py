@@ -85,12 +85,12 @@ def grain_anime(POSITION, hauteur_silo, largeur_silo, nb_grains):
             texts[grain].set_position((POSITION[i, grain, 0], POSITION[i, grain, 1]))
         return grains + texts
     
-    ani = animation.FuncAnimation(fig, animate, frames=POSITION.shape[0], interval=1, blit=True)
+    ani = animation.FuncAnimation(fig, animate, frames=POSITION.shape[0], interval=0.001, blit=True)
     plt.show()
 
 
 
-def calcul_distance_normal(vitesse_i, vitesse_j, position_i, position_j, rayon_i, rayon_j):
+def calcul_allongement_normal(vitesse_i, vitesse_j, position_i, position_j, rayon_i, rayon_j):
     """
     Calcul de l'allongement/distance normal à partir de l'équation
     Paramètres
@@ -127,7 +127,7 @@ def calcul_allongement_tangentiel(i, j, indice_temps, pas_de_temps, VITESSE, POS
     """
 
     #Si il ne sont pas en contact on ne fait rien:
-    if calcul_distance_normal(vitesse_i=VITESSE[indice_temps][i][:],
+    if calcul_allongement_normal(vitesse_i=VITESSE[indice_temps][i][:],
                               vitesse_j=VITESSE[indice_temps][j][:],
                               position_i=POSITION[indice_temps][i][:],
                               position_j=POSITION[indice_temps][j][:],
@@ -145,7 +145,7 @@ def calcul_allongement_tangentiel(i, j, indice_temps, pas_de_temps, VITESSE, POS
         #Pour ca on cherche le moment d'impact:
         #On cherche le moment d'impact en cherchant le moment ou la distance normal est nulle
         k = 1 # car on sait que c'est déjà le cas
-        while calcul_distance_normal(vitesse_i=VITESSE[indice_temps-k][i][:],
+        while calcul_allongement_normal(vitesse_i=VITESSE[indice_temps-k][i][:],
                               vitesse_j=VITESSE[indice_temps-k][j][:],
                               position_i=POSITION[indice_temps-k][i][:],
                               position_j=POSITION[indice_temps-k][j][:],
@@ -204,7 +204,7 @@ def application_efforts_distance(masse):
     
 
 
-def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT_TANGENTIEL, nb_grains, nb_temps, pas_de_temps, rayon, masse, raideur_tangentielle, indice_temps, temps, hauteur_silo, largeur_silo, raideur_mur):
+def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, nb_grains, nb_temps, pas_de_temps, rayon, masse, raideur_tangentielle, indice_temps, temps, hauteur_silo, largeur_silo, raideur_mur):
     """
     Algorithme principal
     
@@ -214,7 +214,6 @@ def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT
     VITESSE : np.array, tableau des vitesses
     ACCELERATION : np.array, tableau des accélérations
     VITESSE_DEMI_PAS : np.array, tableau des vitesses à temps k+1/2
-    ALLONGEMENT_TANGENTIEL : np.array, tableau des allongements tangentiel
     nb_grains : int, nombre de grains
     nb_temps : int, nombre de temps
     pas_de_temps : float, pas de temps
@@ -243,16 +242,17 @@ def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT
         # Mise a jour des tableaux de position et vitesse à temps k
         for grain in range(nb_grains):
             #Calcul de la nouvelle position du grain
-            POSITION[indice_temps][grain] = POSITION[indice_temps-1][grain] + VITESSE_DEMI_PAS[indice_temps-1][grain] * pas_de_temps
+            POSITION[indice_temps, grain, :] = POSITION[indice_temps-1, grain, :] + VITESSE_DEMI_PAS[indice_temps-1, grain, :]*pas_de_temps
     
             
             #Calcul de la vitesse du grain
-            VITESSE[indice_temps][grain] = VITESSE_DEMI_PAS[indice_temps-1][grain] + ACCELERATION[indice_temps-1][grain] * pas_de_temps/2
+            VITESSE[indice_temps, grain, :] = VITESSE_DEMI_PAS[indice_temps-1, grain, :] + ACCELERATION[indice_temps-1, grain, :]*pas_de_temps/2
         
         # Calcul des efforts de contact pour mise à jour des vitesses à temps k+1/2 et accélérations à temps k
         for grain1 in range(nb_grains):
             #Force à distance = gravité
-            force_resultante = application_efforts_distance(masse)
+            force_resultante = np.array([0, 0])
+            force_resultante += application_efforts_distance(masse)
 
             #Rencontre avec un mur ?
             condition_droite = POSITION[indice_temps][grain1][0] + rayon > largeur_silo
@@ -275,13 +275,28 @@ def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT
                 if grain1 != grain2:
                     #On définit la force de contact entre les deux grains:
                     force_contact = 0
-                    
+
+                    #En cas de contact entre grain1 et grain2, calcul de l'effort de contact normale:
+                    allongement_normal = calcul_allongement_normal(vitesse_i=VITESSE[indice_temps, grain1,:],
+                                                                   vitesse_j=VITESSE[indice_temps, grain2, :],
+                                                                   position_i=POSITION[indice_temps, grain1, :],
+                                                                   position_j=POSITION[indice_temps, grain2, :],
+                                                                   rayon_i=rayon,
+                                                                   rayon_j=rayon)
+                    if allongement_normal < 0:
+                        vecteur_normal = (POSITION[indice_temps, grain1, :] - POSITION[indice_temps, grain2, :])/np.linalg.norm(POSITION[indice_temps, grain1, :] - POSITION[indice_temps, grain2, :])
+                        force_contact += -raideur_normale * allongement_normal * vecteur_normal
+
                     #En cas de contact entre grain1 et grain2, calcul de l'effort de contact tangentielle:
-                    allongement = calcul_allongement_tangentiel(grain1, grain2, indice_temps, pas_de_temps, VITESSE, POSITION)
-                    ALLONGEMENT_TANGENTIEL[grain1][grain2] = allongement
-                    force_contact += raideur_tangentielle * ALLONGEMENT_TANGENTIEL[grain1][grain2]
-                    
-                    #On fait pareil avec l'effort de contact normale:
+                    """
+                    allongement_tangentiel = calcul_allongement_tangentiel(grain1, grain2, indice_temps, pas_de_temps, VITESSE, POSITION)
+                    if allongement_tangentiel != 0:
+                        vecteur_normal = (POSITION[indice_temps, grain1, :] - POSITION[indice_temps, grain2, :])/np.linalg.norm(POSITION[indice_temps, grain1, :] - POSITION[indice_temps, grain2, :])
+                        vitesse_grain1 = VITESSE[indice_temps, grain1, :]
+                        vitesse_tangentiel = np.cross(vitesse_grain1, vecteur_normal)
+                        vecteur_tangentiel = vitesse_tangentiel/np.linalg.norm(vitesse_tangentiel)
+                        force_contact += -raideur_tangentielle * allongement_tangentiel * vecteur_tangentiel
+                    """
                     
                     
                     # 17. Mise à jour de la résultante des forces sur grain1
@@ -332,22 +347,24 @@ def algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT
 
 if __name__ == "__main__":
     #Définition grain
-    nb_grains = 7
+    nb_grains = 5
     masse = 1e-3 #kg    
     rayon = 1e-2 #m
-    raideur_normale = 1 #N/m
-    raideur_tangentielle = 1 #N/m
+    raideur_normale = 100 #N/m
+    raideur_tangentielle = 100 #N/m
     coefficient_de_frottement = 0.5 #N/m
     #Pour le roulement trop compliqué, on utilise leur rotation
+
     #Définition du silo
     hauteur_silo = 0.2 #m
     largeur_silo = 0.2 #m
-    raideur_mur = 100 #N/m
+    raideur_mur = 1000 #N/m
 
+    #Définition du temps
     temps = 0
     indice_temps = 0
     pas_de_temps = 1e-3 #s
-    duree_simulation = 10
+    duree_simulation = 5
     nb_temps = int(duree_simulation/pas_de_temps)
 
     #ON PLACE LE REPERE EN BAS A GAUCHE (0,0) DU SILO COIN BAS GAUCHE Y VERS LE HAUT.
@@ -357,11 +374,10 @@ if __name__ == "__main__":
     VITESSE = np.zeros((nb_temps, nb_grains, 2))
     VITESSE[0,:,:] = 0 # pas défini au début, on commece à 1 pour la vitesse et à 0 pour la vitessse de demi pas
     VITESSE_DEMI_PAS = np.zeros((nb_temps, nb_grains, 2))
-    VITESSE_DEMI_PAS[0] = np.random.uniform(low=-0.2, high=0.2, size=(nb_grains, 2)) #RAPPEL: Le silo fait un metre par un metre...
+    VITESSE_DEMI_PAS[0] = np.random.uniform(low=-0.05, high=0.05, size=(nb_grains, 2)) #RAPPEL: Le silo fait un metre par un metre...
     ACCELERATION = np.zeros((nb_temps, nb_grains, 2))
-    ACCELERATION[0,:,:] = np.random.uniform(low=-0.2, high=0.2, size=(nb_grains, 2))
+    ACCELERATION[0,:,:] = 0
 
-    ALLONGEMENT_TANGENTIEL = np.zeros((nb_grains, nb_grains)) #On stocke les allongements tangentiels pour chaque couple de grains en contact
 
 
 
@@ -369,4 +385,4 @@ if __name__ == "__main__":
     debug = int(input("Debug ou pas? entrez 1 ou 0"))
     if debug:
         debug_name = input("Nom du debug:(Wait for user input...)")
-    algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, ALLONGEMENT_TANGENTIEL, nb_grains, nb_temps, pas_de_temps, rayon, masse, raideur_tangentielle, indice_temps, temps, hauteur_silo, largeur_silo, raideur_mur)
+    algoprincipal(POSITION, VITESSE, ACCELERATION, VITESSE_DEMI_PAS, nb_grains, nb_temps, pas_de_temps, rayon, masse, raideur_tangentielle, indice_temps, temps, hauteur_silo, largeur_silo, raideur_mur)
